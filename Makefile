@@ -9,6 +9,8 @@ SAIL_DIR:=$(shell opam var sail:share)
 SAIL:=sail
 endif
 
+ISLA_SAIL=isla-sail
+
 SAIL_X86_DIR=sail-x86
 SAIL_X86_MODEL_DIR=$(SAIL_X86_DIR)/model
 SAIL_CHERI_MODEL_DIR=src
@@ -56,8 +58,11 @@ x86_emulator.c: $(ALL_SAILS)
 x86_emulator: x86_emulator.c $(SAIL_DIR)/lib/*.c
 	$(CC) -O2 -DHAVE_SETCONFIG x86_emulator.c $(SAIL_DIR)/lib/*.c $(GMP_FLAGS) $(GMP_LIBS) $(ZLIB_FLAGS) $(ZLIB_LIBS) -I $(SAIL_DIR)/lib/ -o x86_emulator
 
+x86.ir: $(ALL_SAILS) sail-x86/test-generation-patches/*.sail
+	$(ISLA_SAIL) $(foreach file,$(wildcard sail-x86/test-generation-patches/*.sail),-splice $(file)) -verbose 1 -o x86 $(ALL_SAILS)
+
 interactive:
 	$(SAIL) -i -memo_z3 $(SAIL_FLAGS) $(ALL_SAILS)
 
 clean:
-	rm -f x86_emulator.c x86_emulator
+	rm -f x86_emulator.c x86_emulator x86.ir
