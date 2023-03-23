@@ -1,0 +1,106 @@
+/*=======================================================================================*/
+/*  CHERI x86-64 Sail Model                                                              */
+/*                                                                                       */
+/*  Copyright (c) 2017-2021                                                              */
+/*    Alasdair Armstrong                                                                 */
+/*    Thomas Bauereiss                                                                   */
+/*    Brian Campbell                                                                     */
+/*    Jessica Clarke                                                                     */
+/*    Nathaniel Wesley Filardo (contributions prior to July 2020, thereafter Microsoft)  */
+/*    Alexandre Joannou                                                                  */
+/*    Microsoft                                                                          */
+/*    Prashanth Mundkur                                                                  */
+/*    Robert Norton-Wright (contributions prior to March 2020, thereafter Microsoft)     */
+/*    Alexander Richardson                                                               */
+/*    Peter Rugg                                                                         */
+/*    Peter Sewell                                                                       */
+/*                                                                                       */
+/*  All rights reserved.                                                                 */
+/*                                                                                       */
+/*  This software was developed by SRI International and the University of               */
+/*  Cambridge Computer Laboratory (Department of Computer Science and                    */
+/*  Technology) under DARPA/AFRL contract FA8650-18-C-7809 ("CIFV"), and                 */
+/*  under DARPA contract HR0011-18-C-0016 ("ECATS") as part of the DARPA                 */
+/*  SSITH research programme.                                                            */
+/*                                                                                       */
+/*  This software was developed within the Rigorous Engineering of                       */
+/*  Mainstream Systems (REMS) project, partly funded by EPSRC grant                      */
+/*  EP/K008528/1, at the Universities of Cambridge and Edinburgh.                        */
+/*                                                                                       */
+/*  This project has received funding from the European Research Council                 */
+/*  (ERC) under the European Union’s Horizon 2020 research and innovation                */
+/*  programme (grant agreement 789108, ELVER).                                           */
+/*                                                                                       */
+/*  Redistribution and use in source and binary forms, with or without                   */
+/*  modification, are permitted provided that the following conditions                   */
+/*  are met:                                                                             */
+/*  1. Redistributions of source code must retain the above copyright                    */
+/*     notice, this list of conditions and the following disclaimer.                     */
+/*  2. Redistributions in binary form must reproduce the above copyright                 */
+/*     notice, this list of conditions and the following disclaimer in                   */
+/*     the documentation and/or other materials provided with the                        */
+/*     distribution.                                                                     */
+/*                                                                                       */
+/*  THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS''                   */
+/*  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED                    */
+/*  TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A                      */
+/*  PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR                  */
+/*  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,                         */
+/*  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT                     */
+/*  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF                     */
+/*  USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND                  */
+/*  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,                   */
+/*  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT                   */
+/*  OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF                   */
+/*  SUCH DAMAGE.                                                                         */
+/*=======================================================================================*/
+
+/* Use merged data/cap functions that isla currently understands */
+
+val rcap : (sbits(64)) -> Capability
+
+function rcap (addr) = {
+    if not_bool(canonical_address_p(signed(addr))) then
+        x86_model_error("rcap: non-canonical address");
+    let lin_addr : bits(48) = sail_mask_signed(48, addr);
+    if not_bool(address_aligned_p(lin_addr, cap_size, false)) then
+        x86_model_error("rcap: misaligned address");
+    let phys_addr : bits(52) =
+      if app_view then {
+        sail_mask_signed(52, lin_addr)
+      } else {
+        ia32e_la_to_pa(lin_addr, ":R")
+      };
+    let (cap_bits, tag) : (CapBits, bit) = __read_memt(Read_plain,
+      sail_mask(64, phys_addr), cap_size);
+    let tag = bit_to_bool(tag);
+    log_memory_read(phys_addr, cap_size, cap_bits);
+    log_memtag_read(phys_addr, tag);
+    memBitsToCapability(tag, cap_bits)
+}
+
+val bool_to_bit : bool -> bit
+
+function bool_to_bit(b) = if b then bitone else bitzero
+
+val wcap : (sbits(64), Capability) -> unit
+
+function wcap (addr, cap) = {
+    if not_bool(canonical_address_p(signed(addr))) then
+        x86_model_error("wcap: non-canonical address");
+    let lin_addr : bits(48) = sail_mask_signed(48, addr);
+    if not_bool(address_aligned_p(lin_addr, cap_size, false)) then
+        x86_model_error("wcap: misaligned address");
+    let phys_addr : bits(52) =
+      if app_view then {
+        sail_mask_signed(52, lin_addr)
+      } else {
+        ia32e_la_to_pa(lin_addr, ":W")
+      };
+    let cap_bits = capToMemBits(cap);
+    __write_mem_ea(Write_plain, 64, sail_mask(64, phys_addr), cap_size);
+    let dummy = __write_memt(Write_plain, sail_mask(64, phys_addr),
+      cap_size, cap_bits, bool_to_bit(cap.tag));
+    log_memory_write(phys_addr, cap_size, cap_bits);
+    log_memtag_write(phys_addr, cap.tag);
+}

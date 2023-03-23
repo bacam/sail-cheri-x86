@@ -15,7 +15,9 @@ SAIL_X86_DIR=sail-x86
 SAIL_X86_MODEL_DIR=$(SAIL_X86_DIR)/model
 SAIL_CHERI_MODEL_DIR=src
 
+# FIXME: needs a decent way to include mono_rewrites.sail for just the IR target
 PRELUDE_SAILS = $(SAIL_X86_MODEL_DIR)/prelude.sail \
+		test-generation/mono.sail \
 		$(SAIL_CHERI_MODEL_DIR)/cheri_prelude.sail \
 		$(SAIL_CHERI_MODEL_DIR)/cheri_types.sail \
 		$(SAIL_CHERI_MODEL_DIR)/cheri_cap_common.sail \
@@ -59,10 +61,20 @@ x86_emulator: x86_emulator.c $(SAIL_DIR)/lib/*.c
 	$(CC) -O2 -DHAVE_SETCONFIG x86_emulator.c $(SAIL_DIR)/lib/*.c $(GMP_FLAGS) $(GMP_LIBS) $(ZLIB_FLAGS) $(ZLIB_LIBS) -I $(SAIL_DIR)/lib/ -o x86_emulator
 
 x86.ir: $(ALL_SAILS) sail-x86/test-generation-patches/*.sail
-	$(ISLA_SAIL) $(foreach file,$(wildcard sail-x86/test-generation-patches/*.sail),-splice $(file)) -verbose 1 -o x86 $(ALL_SAILS)
+	$(ISLA_SAIL) -mono_rewrites $(foreach file,$(wildcard sail-x86/test-generation-patches/*.sail),-splice $(file)) $(foreach file,$(wildcard test-generation/*.splice.sail),-splice $(file)) -verbose 1 -o x86 $(ALL_SAILS)
+
+x86_gdb.c: $(ALL_SAILS) gdb.sail
+	$(SAIL) -c -c_gdb -c_no_main -c_preserve gdb_encode_cap -c_preserve gdb_decode_cap -memo_z3 $(SAIL_FLAGS) $(ALL_SAILS) gdb.sail > x86_gdb.c.temp
+	mv x86_gdb.c.temp x86_gdb.c
+
+x86_gdb.o: x86_gdb.c
+	$(CC) -g -O2 -DHAVE_SETCONFIG -c x86_gdb.c -I $(SAIL_DIR)/lib/ $(GMP_FLAGS) $(ZLIB_FLAGS)
+
+x86_gdb: x86_gdb.o sail-x86/gdb/*.c
+	$(CC) -g -O2 -DHAVE_SETCONFIG x86_gdb.o sail-x86/gdb/*.c $(SAIL_DIR)/lib/*.c $(GMP_FLAGS) $(GMP_LIBS) $(ZLIB_FLAGS) $(ZLIB_LIBS) -I $(SAIL_DIR)/lib/ -o x86_gdb
 
 interactive:
 	$(SAIL) -i -memo_z3 $(SAIL_FLAGS) $(ALL_SAILS)
 
 clean:
-	rm -f x86_emulator.c x86_emulator x86.ir
+	rm -f x86_emulator.c x86_emulator x86.ir x86_gdb.c x86_gdb.o x86_gdb
