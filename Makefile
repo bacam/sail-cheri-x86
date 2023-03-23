@@ -73,8 +73,18 @@ x86_gdb.o: x86_gdb.c
 x86_gdb: x86_gdb.o sail-x86/gdb/*.c
 	$(CC) -g -O2 -DHAVE_SETCONFIG x86_gdb.o sail-x86/gdb/*.c $(SAIL_DIR)/lib/*.c $(GMP_FLAGS) $(GMP_LIBS) $(ZLIB_FLAGS) $(ZLIB_LIBS) -I $(SAIL_DIR)/lib/ -o x86_gdb
 
+x86_gdb_cov.c: $(ALL_SAILS) gdb.sail
+	$(SAIL) -c -c_gdb -c_no_main -c_preserve gdb_encode_cap -c_preserve gdb_decode_cap -c_coverage all_branches -c_include sail_coverage.h -memo_z3 $(SAIL_FLAGS) $(ALL_SAILS) gdb.sail > x86_gdb_cov.c.temp
+	mv x86_gdb_cov.c.temp x86_gdb_cov.c
+
+x86_gdb_cov.o: x86_gdb_cov.c
+	$(CC) -g -O2 -DHAVE_SETCONFIG -c x86_gdb_cov.c -I $(SAIL_DIR)/lib/ $(GMP_FLAGS) $(ZLIB_FLAGS)
+
+x86_gdb_cov: x86_gdb_cov.o sail-x86/gdb/*.c
+	$(CC) -g -O2 -DHAVE_SETCONFIG x86_gdb_cov.o sail-x86/gdb/*.c $(SAIL_DIR)/lib/*.c $(SAIL_DIR)/lib/coverage/libsail_coverage.a -lpthread -ldl $(GMP_FLAGS) $(GMP_LIBS) $(ZLIB_FLAGS) $(ZLIB_LIBS) -I $(SAIL_DIR)/lib/ -o x86_gdb_cov
+
 interactive:
 	$(SAIL) -i -memo_z3 $(SAIL_FLAGS) $(ALL_SAILS)
 
 clean:
-	rm -f x86_emulator.c x86_emulator x86.ir x86_gdb.c x86_gdb.o x86_gdb
+	rm -f x86_emulator.c x86_emulator x86.ir x86_gdb.c x86_gdb.o x86_gdb x86_gdb_cov.c x86_gdb_cov.o x86_gdb_cov
